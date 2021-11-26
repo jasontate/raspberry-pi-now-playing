@@ -1,6 +1,6 @@
 <?PHP 
-$user     = 'jasontate'; 
-$key      = 'apikey';
+$user     = 'lastfm username'; 
+$key      = 'lastfm apikey';
 $status   = 'Last Played';
 $endpoint = 'https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=' . $user . '&limit=2&api_key=' . $key . '&format=json';
 $ch = curl_init();
