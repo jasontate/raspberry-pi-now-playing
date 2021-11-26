@@ -1,0 +1,247 @@
+@font-face {
+	font-family: 'proxima-nova';
+	src: url('../wp-content/themes/chorus/fonts/proximanova-regular.woff') format('woff'),
+		 url('../wp-content/themes/chorus/fonts/proximanova-regular.woff2') format('woff2');
+	font-weight: normal;
+	font-style: normal;
+}
+
+@font-face {
+	font-family: 'proxima-nova';
+	src: url('../wp-content/themes/chorus/fonts/proximanova-italic.woff') format('woff'),
+		 url('../wp-content/themes/chorus/fonts/proximanova-italic.woff2') format('woff2');
+	font-weight: normal;
+	font-style: italic;
+}
+
+@font-face {
+	font-family: 'proxima-nova';
+	src: url('../wp-content/themes/chorus/fonts/proximanova-bold.woff') format('woff'),
+		 url('../wp-content/themes/chorus/fonts/proximanova-bold.woff2') format('woff2');
+	font-weight: bold;
+	font-style: normal;
+}
+
+@font-face {
+	font-family: 'proxima-nova';
+	src: url('../wp-content/themes/chorus/fonts/proximanova-boldit.woff') format('woff'),
+		 url('../wp-content/themes/chorus/fonts/proximanova-boldit.woff2') format('woff2');
+	font-weight: bold;
+	font-style: italic;
+}
+
+@font-face {
+	font-family: 'proxima-nova';
+	src: url('../wp-content/themes/chorus/fonts/proximanova-light.woff') format('woff'),
+		 url('../wp-content/themes/chorus/fonts/proximanova-light.woff2') format('woff2');
+	font-weight: 300;
+}
+
+@font-face {
+	font-family: 'myriad-pro';
+	src: url('../wp-content/themes/chorus/fonts/mp.woff') format('woff'),
+		 url('../wp-content/themes/chorus/fonts/mp.woff2') format('woff2');
+	font-weight: normal;
+	font-style: normal;
+}
+
+@font-face {
+	font-family: 'myriad-pro';
+	src: url('../wp-content/themes/chorus/fonts/mp-italic.woff') format('woff'),
+		 url('../wp-content/themes/chorus/fonts/mp-italic.woff2') format('woff2');
+	font-weight: normal;
+	font-style: italic;
+}
+
+@font-face {
+	font-family: 'myriad-pro';
+	src: url('../wp-content/themes/chorus/fonts/mp-bold.woff') format('woff'),
+		 url('../wp-content/themes/chorus/fonts/mp-bold.woff2') format('woff2');
+	font-weight: bold;
+	font-style: normal;
+}
+
+@font-face {
+	font-family: 'myriad-pro';
+	src: url('../wp-content/themes/chorus/fonts/mp-boldit.woff') format('woff');
+	font-weight: bold;
+	font-style: italic;
+}
+
+@font-face {
+	font-family: 'myriad-pro';
+	src: url('../wp-content/themes/chorus/fonts/mp-semibold.woff') format('woff'),
+		 url('../wp-content/themes/chorus/fonts/mp-semibold.woff2') format('woff2');
+	font-weight: 600;
+	font-style: normal;
+}
+
+body {
+	background: #000;
+	color: #fff;
+	font-family: "proxima-nova", "Helvetica Neue", Helvetica, Arial, "Lucida Grande", "Lucida Sans", Tahoma, sans-serif; 
+}
+
+#container {
+	width: 720px;
+	height: 720px;
+	margin: 0px auto;
+	border: 1px solid #000;
+	position: relative;
+}
+#container.last_played {
+	background: #111111;
+}
+
+h1 {
+	font-family: 'myriad-pro','Gill Sans','Gill Sans MT',Calibri,'Lucida Grande','Lucida Sans Unicode','Lucida Sans',Tahoma,sans-serif;
+	font-size: 18px;
+	margin-top: 0px;
+	margin-bottom: 10px;
+	color: #8D9194;
+	font-weight: normal;
+	text-transform: uppercase;
+}
+
+.artwork {
+	background-image: url("<?php echo $trackInfo['albumArt']; ?>");
+	background-position: bottom;
+	background-repeat: no-repeat;
+	background-size: 120%;
+	opacity: .5;
+	filter: blur(80px);
+	-webkit-filter: blur(80px);
+	height: 100%;
+	width: 100%;
+	overflow: hidden;
+}
+.art_image {
+	width: 500px;
+	border-radius: 6px;
+	position: relative;
+	z-index: 2;
+	margin-top: 30px;
+	box-shadow: 0 0 20px 4px rgba(0, 0, 0, 0.7);
+}
+
+#main {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+}
+
+.track {
+	font-weight: bold;
+	font-size: 32px;
+	margin-top: 4px;
+	margin-bottom: 0px;
+	overflow: hidden;
+	display: -webkit-box;
+	-webkit-line-clamp: 1;
+	-webkit-box-orient: vertical;
+	text-align: center;
+}
+
+.artist {
+	font-size: 28px;
+	margin-bottom: 4px;
+	color: #F4F4F4;
+	text-align: center;
+}
+
+.album {
+	font-size: 20px;
+	color: #8D9194;
+	font-weight: 100;
+	text-align: center;
+	font-style: italic;
+	overflow: hidden;
+	display: -webkit-box;
+	-webkit-line-clamp: 1;
+	-webkit-box-orient: vertical;
+}
+
+.number {
+	font-weight: 100;
+	margin-top: 7px;
+	font-size: 13px;
+	text-transform: uppercase;
+	color: #8D9194;
+	text-align: center;
+}
+
+.user {
+	font-family: 'myriad-pro','Gill Sans','Gill Sans MT',Calibri,'Lucida Grande','Lucida Sans Unicode','Lucida Sans',Tahoma,sans-serif;
+	font-weight: bold;
+	font-size: 32px;
+	margin: 13px 0px 0px 20px;
+}
+
+.list {
+	margin-left: 20px;
+	position: relative;
+	font-family: 'myriad-pro','Gill Sans','Gill Sans MT',Calibri,'Lucida Grande','Lucida Sans Unicode','Lucida Sans',Tahoma,sans-serif;
+	color: #D0D0D0;
+}
+
+.stat_box {
+	background-color: #1C1C1E;
+	border-radius: 8px;
+	padding: 9px 10px 10px 14px;
+	margin: 11px 0px 20px 20px;
+	float: left;
+	width: calc(50% - 54px);
+	height: 140px;
+	color: #D0D0D0;
+	text-transform: uppercase;
+	font-size: 13px;
+	font-weight: bold;
+	display:flex;
+	justify-content:center;
+	align-items:center;
+	position: relative;
+}
+.stat_box:last-of-type {
+	margin-right: 20px;
+}
+.stat_box .track {
+	font-size: 24px;
+	text-transform: none;
+	color: #fff;
+	overflow: hidden;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	margin-top: 0px;
+}
+.stat_box .scrobbles {
+	margin-top: 0px;
+	font-size: 45px;
+	color: #fff;
+	text-align: center;
+}
+.stat_box .artist {
+	margin-top: 8px;
+	text-transform: none;
+	font-size: 16px;
+	color: #8D9194;
+}
+.stat_box .header {
+	position: absolute;
+	top: 0;
+	left: 0;
+	margin: 10px 0px 0px 15px;
+}
+
+.albums {
+	margin-top: 20px;
+	margin-left: 53px;
+}
+.top_albums {
+	width: 130px;
+	margin-left: 16px;
+	margin-bottom: 10px;
+	border-radius: 6px;
+	box-shadow: 0 0 10px 4px rgba(0, 0, 0, 0.7);
+}
