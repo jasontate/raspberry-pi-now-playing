@@ -1,139 +1,84 @@
-<?PHP 
-$user     = 'lastfm username'; 
-$key      = 'lastfm apikey';
-$status   = 'Last Played';
-$endpoint = 'https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=' . $user . '&limit=2&api_key=' . $key . '&format=json';
-$ch = curl_init();
-curl_setopt($ch, CURLOPT_URL, $endpoint);
-curl_setopt($ch, CURLOPT_USERAGENT, $_SERVER['HTTP_USER_AGENT']);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
-curl_setopt($ch, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
-curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 0); // 0 for indefinite
-curl_setopt($ch, CURLOPT_TIMEOUT, 10); // 10 second attempt before timing out
-curl_setopt($ch, CURLOPT_HTTPHEADER, array('Accept: application/json'));
-$response = curl_exec($ch);
-$lastfm[] = json_decode($response, true);
-curl_close($ch);
+<?php
+session_start();
 
-// Get the album artwork.
-$artwork = $lastfm[0]['recenttracks']['track'][0]['image'][3]['#text'];
+// Constants
+define('LASTFM_API_KEY', 'yourapikey');
+define('LASTFM_USER', 'yourusername');
+define('CACHE_DURATION', 300); // 5 minutes
 
-if ( empty( $artwork ) ) {  // Check if album artwork exists on last.fm, otherwise use a placeholder
-	$artwork = 'artwork-placeholder.png';
-}
-else { // change the size to the largest available.
-	$artwork = str_replace('300x300', '600x600', $artwork); 
+// Helper functions
+function fetchFromLastFM($endpoint) {
+	$ch = curl_init();
+	curl_setopt($ch, CURLOPT_URL, $endpoint);
+	curl_setopt($ch, CURLOPT_USERAGENT, $_SERVER['HTTP_USER_AGENT']);
+	curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+	curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+	$response = curl_exec($ch);
+	curl_close($ch);
+	return json_decode($response, true);
 }
 
-// Populate array with the returned information.
+function titleCase($string) {
+	$minorWords = ['a', 'an', 'and', 'as', 'at', 'but', 'by', 'en', 'for', 'if', 'in', 'of', 'on', 'or', 'per', 'the', 'to', 'via'];
+	$pieces = preg_split('/(\s+|[(){}[\]<>.,;!?])/u', $string, -1, PREG_SPLIT_DELIM_CAPTURE);
+	foreach ($pieces as $key => $word) {
+		if (ctype_alpha($word) && (!in_array(mb_strtolower($word), $minorWords) || $key === 0 || $key === count($pieces) - 1)) {
+			$pieces[$key] = ucfirst(mb_strtolower($word));
+		} else {
+			$pieces[$key] = mb_strtolower($word);
+		}
+	}
+	return implode('', $pieces);
+}
+
+function getCachedData($cacheKey, $fetchFunction) {
+	if (isset($_SESSION[$cacheKey]) && time() - $_SESSION[$cacheKey]['timestamp'] < CACHE_DURATION) {
+		return $_SESSION[$cacheKey]['data'];
+	}
+
+	$data = $fetchFunction();
+	$_SESSION[$cacheKey] = ['data' => $data, 'timestamp' => time()];
+	return $data;
+}
+
+// API Endpoints
+$recentTracksEndpoint = "https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=" . LASTFM_USER . "&limit=2&api_key=" . LASTFM_API_KEY . "&format=json";
+$userInfoEndpoint = "https://ws.audioscrobbler.com/2.0/?method=user.getinfo&user=" . LASTFM_USER . "&api_key=" . LASTFM_API_KEY . "&format=json";
+$topAlbumsEndpoint = "https://ws.audioscrobbler.com/2.0/?method=user.gettopalbums&user=" . LASTFM_USER . "&api_key=" . LASTFM_API_KEY . "&period=7day&limit=12&format=json";
+
+// Fetch recent tracks
+$recentTracks = fetchFromLastFM($recentTracksEndpoint);
+$currentTrack = $recentTracks['recenttracks']['track'][0] ?? null;
+
+// Track info
+$isNowPlaying = isset($currentTrack['@attr']['nowplaying']);
 $trackInfo = [
-	'name'       => $lastfm[0]['recenttracks']['track'][0]['name'],
-	'album'      => $lastfm[0]['recenttracks']['track'][0]['album']['#text'],
-	'artist'     => $lastfm[0]['recenttracks']['track'][0]['artist']['#text'],
-	'albumArt'   => $artwork,
-	'status'     => $status
+	'name' => titleCase($currentTrack['name'] ?? ''),
+	'album' => titleCase($currentTrack['album']['#text'] ?? ''),
+	'artist' => titleCase($currentTrack['artist']['#text'] ?? ''),
+	'albumArt' => str_replace('300x300', '600x600', $currentTrack['image'][3]['#text'] ?? 'artwork-placeholder.png'),
+	'status' => $isNowPlaying ? 'Now Playing' : 'Last Played',
+	'playcount' => '',
+	'loved' => false,
 ];
 
-// Check if we are currently playing a song.
-if ( !empty($lastfm[0]['recenttracks']['track'][0]['@attr']['nowplaying']) ) {
-	$trackInfo['nowPlaying'] = $lastfm[0]['recenttracks']['track'][0]['@attr']['nowplaying'];
-	$trackInfo['status'] = 'Now Playing';
+// Fetch play count and loved status if playing
+if ($isNowPlaying) {
+	$trackInfoEndpoint = "https://ws.audioscrobbler.com/2.0/?method=track.getInfo&username=" . LASTFM_USER . "&artist=" . urlencode($trackInfo['artist']) . "&track=" . urlencode($trackInfo['name']) . "&api_key=" . LASTFM_API_KEY . "&format=json";
+	$trackDetails = fetchFromLastFM($trackInfoEndpoint);
+	$trackInfo['playcount'] = $trackDetails['track']['userplaycount'] ?? 0;
+	$trackInfo['loved'] = ($trackDetails['track']['userloved'] ?? 0) == 1;
 }
 
-// We are currently playing a song, get more information about it.
-if($trackInfo['status'] == "Now Playing") {
-	
-	// Get the number of plays for the track.
-	$endpoint = 'https://ws.audioscrobbler.com/2.0/?method=track.getInfo&username=' . $user . '&api_key=' . $key . '&artist=' . urlencode($trackInfo['artist']) . '&track=' . urlencode($trackInfo['name']) . '&format=json';
-	$ch = curl_init();
-	curl_setopt($ch, CURLOPT_URL, $endpoint);
-	curl_setopt($ch, CURLOPT_USERAGENT, $_SERVER['HTTP_USER_AGENT']);
-	curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
-	curl_setopt($ch, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
-	curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 0); // 0 for indefinite
-	curl_setopt($ch, CURLOPT_TIMEOUT, 10); // 10 second attempt before timing out
-	curl_setopt($ch, CURLOPT_HTTPHEADER, array('Accept: application/json'));
-	$response = curl_exec($ch);
-	$track[] = json_decode($response, true);
-	curl_close($ch);
-	
-	// Get the number of plays for this track.
-	$plays = $track[0]['track']['userplaycount'];
-	if($plays > 0) {
-		$playcount = $plays . ' Plays';
-	}
-	// Check if it's a loved song.
-	$loved = '';
-	if($track[0]['track']['userloved'] == 1) {
-		$loved = '&nbsp;&nbsp;❤️';
-	}
-	// We are playing something, let's check if the song changes every 15 seconds.
-	$duration = 15000;
-}
-
-// We are not currently playing a song, let's show some stats instead.
-if($trackInfo['status'] != "Now Playing") {
-	
-	// Get information about the user.
-	$endpoint = 'https://ws.audioscrobbler.com/2.0/?method=user.getinfo&user=' . $user . '&api_key=' . $key . '&format=json';
-	$ch = curl_init();
-	curl_setopt($ch, CURLOPT_URL, $endpoint);
-	curl_setopt($ch, CURLOPT_USERAGENT, $_SERVER['HTTP_USER_AGENT']);
-	curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
-	curl_setopt($ch, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
-	curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 0); // 0 for indefinite
-	curl_setopt($ch, CURLOPT_TIMEOUT, 10); // 10 second attempt before timing out
-	curl_setopt($ch, CURLOPT_HTTPHEADER, array('Accept: application/json'));
-	$response = curl_exec($ch);
-	$stats[] = json_decode($response, true);
-	curl_close($ch);
-	
-	$username = $stats[0]['user']['realname'];
-	$playcount = number_format($stats[0]['user']['playcount']);
-	
-	// Get infromation about the last played albums.
-	$endpoint = 'https://ws.audioscrobbler.com/2.0/?method=user.gettopalbums&user=' . $user . '&api_key=' . $key . '&period=7day&limit=12&format=json';
-	$ch = curl_init();
-	curl_setopt($ch, CURLOPT_URL, $endpoint);
-	curl_setopt($ch, CURLOPT_USERAGENT, $_SERVER['HTTP_USER_AGENT']);
-	curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
-	curl_setopt($ch, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
-	curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 0); // 0 for indefinite
-	curl_setopt($ch, CURLOPT_TIMEOUT, 10); // 10 second attempt before timing out
-	curl_setopt($ch, CURLOPT_HTTPHEADER, array('Accept: application/json'));
-	$response = curl_exec($ch);
-	$albumcharts[] = json_decode($response, true);
-	curl_close($ch);
-	
-	// Get the top 12 albums and their artwork.	
-	$album_1 = $albumcharts[0]['topalbums']['album'][0]['image'][3]['#text'];
-	$album_2 = $albumcharts[0]['topalbums']['album'][1]['image'][3]['#text'];
-	$album_3 = $albumcharts[0]['topalbums']['album'][2]['image'][3]['#text'];
-	$album_4 = $albumcharts[0]['topalbums']['album'][3]['image'][3]['#text'];
-	$album_5 = $albumcharts[0]['topalbums']['album'][4]['image'][3]['#text'];
-	$album_6 = $albumcharts[0]['topalbums']['album'][5]['image'][3]['#text'];
-	$album_7 = $albumcharts[0]['topalbums']['album'][6]['image'][3]['#text'];
-	$album_8 = $albumcharts[0]['topalbums']['album'][7]['image'][3]['#text'];
-	$album_9 = $albumcharts[0]['topalbums']['album'][8]['image'][3]['#text'];
-	$album_10 = $albumcharts[0]['topalbums']['album'][9]['image'][3]['#text'];
-	$album_11 = $albumcharts[0]['topalbums']['album'][10]['image'][3]['#text'];
-	$album_12 = $albumcharts[0]['topalbums']['album'][11]['image'][3]['#text'];
-	
-	// Not playing anything, so let's refresh every 30 seconds.
-	$duration = 30000;
-}
+// Fetch and cache top albums
+$topAlbums = getCachedData('top_albums', function () use ($topAlbumsEndpoint) {
+	return fetchFromLastFM($topAlbumsEndpoint)['topalbums']['album'] ?? [];
+});
 ?>
 
-<!DOCTYPE html>   
-<!--[if lt IE 7 ]> <html lang="en" class="no-js ie6"> <![endif]-->
-<!--[if IE 7 ]>    <html lang="en" class="no-js ie7"> <![endif]-->
-<!--[if IE 8 ]>    <html lang="en" class="no-js ie8"> <![endif]-->
-<!--[if IE 9 ]>    <html lang="en" class="no-js ie9"> <![endif]-->
-<!--[if (gt IE 9)|!(IE)]><!--> <html lang="en" class="no-js"> <!--<![endif]-->
+<!DOCTYPE html>
+<html lang="en" class="no-js">
 <head>
 	<meta charset="utf-8">
 	<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
@@ -141,122 +86,172 @@ if($trackInfo['status'] != "Now Playing") {
 	<link rel="stylesheet" href="/static/css/normalize.min.css">
 	<link rel="stylesheet" href="style.min.css?v1">
 	<style>
-		.artwork {
-			background-image: url("<?php echo $trackInfo['albumArt']; ?>");
-		}
+		.artwork { background-image: url("<?php echo $trackInfo['albumArt']; ?>"); }
 	</style>
 	<script>
-		let playing = false;
-	
-		function requestUpdate() {
-			let url = `https://ws.audioscrobbler.com/2.0/?api_key=<?php echo $key; ?>&method=user.getRecentTracks&user=<?php echo $user ?>&extended=1&limit=1&format=json`;
+		let playing = <?php echo $isNowPlaying ? 'true' : 'false'; ?>;
+		let pollInterval = playing ? 10000 : 30000; // 10 seconds if playing, 30 seconds if idle
 
-			let request = new Request(url, {
-				"method": "GET",
-			});
+		async function fetchTrackData() {
+			try {
+				const response = await fetch('<?php echo $recentTracksEndpoint; ?>');
+				const data = await response.json();
+				const tracks = data.recenttracks.track;
 
-			return fetch(request);
-		}
-		
-		function successHandler(value) {
-			value.json().then(data => {
-				//console.log(data);
-				
-				let track = data.recenttracks.track[0];
-				let title = data.recenttracks.track[0].name;
-				let old_title = document.querySelector(".track");
+				const nowPlaying = tracks[0] && tracks[0]["@attr"] && tracks[0]["@attr"].nowplaying;
 
-				console.log(title);
-				console.log(old_title.innerText);
-
-				if (track["@attr"] == undefined) {
-					if (playing) {
-						// Stop Playing
-						console.log("Not playing anything.");
-						playing = false;
-						window.location.reload(1);
-					}
-				} else if (playing == false) {
-					// Start Playing
-					console.log("Now playing.");
-					playing = true;
-				} 
-				if(title && old_title.innerText){
-					if(title != old_title.innerText) {
-						// Refresh page.
-						window.location.reload(1);
-					}
+				if (nowPlaying) {
+					updatePlayingTrack(tracks[0]);
+					pollInterval = 10000;
+				} else {
+					const lastPlayedTrack = tracks[0];
+					updateIdleState(lastPlayedTrack);
+					pollInterval = 30000;
 				}
-			}, reason => {
+			} catch (error) {
+				console.error('Error fetching track data:', error);
+			} finally {
+				setTimeout(fetchTrackData, pollInterval);
+			}
+		}
+
+		let currentTrackCache = { name: '', artist: '' };
 		
-			})
-			setTimeout(tick, <?php echo $duration; ?>);
+		function updatePlayingTrack(track) {
+			const trackName = track.name || 'Unknown Track';
+			const artistName = track.artist['#text'] || 'Unknown Artist';
+		
+			// Check if the track has changed
+			if (currentTrackCache.name === trackName && currentTrackCache.artist === artistName) {
+				return; // No need to fetch details again
+			}
+		
+			currentTrackCache = { name: trackName, artist: artistName };
+		
+			if (!document.querySelector('.art_image')) {
+				renderNowPlayingLayout();
+			}
+		
+			const albumName = track.album['#text'] || 'Unknown Album';
+			const albumArt = track.image[3]['#text'] || 'artwork-placeholder.png';
+		
+			document.querySelector('.track').textContent = trackName;
+			document.querySelector('.artist').textContent = artistName;
+			document.querySelector('.album').textContent = albumName;
+			document.querySelector('.art_image').src = albumArt;
+		
+			fetchTrackDetails(artistName, trackName);
 		}
 		
-		function failureHandler(reason) {
-			console.log("Last.fm query failed:", reason);
-			setTimeout(tick, 60000);
+		const trackDetailsCache = {};
+		
+		async function fetchTrackDetails(artist, track) {
+			const cacheKey = `${artist}-${track}`.toLowerCase();
+		
+			if (trackDetailsCache[cacheKey]) {
+				updateTrackDetails(trackDetailsCache[cacheKey]);
+				return;
+			}
+		
+			try {
+				const response = await fetch(`https://ws.audioscrobbler.com/2.0/?method=track.getInfo&username=<?php echo LASTFM_USER; ?>&artist=${encodeURIComponent(artist)}&track=${encodeURIComponent(track)}&api_key=<?php echo LASTFM_API_KEY; ?>&format=json`);
+				const data = await response.json();
+		
+				const playcount = data.track?.userplaycount || 0;
+				const loved = data.track?.userloved === "1";
+		
+				// Cache the result
+				trackDetailsCache[cacheKey] = { playcount, loved };
+		
+				updateTrackDetails({ playcount, loved });
+			} catch (error) {
+				console.error('Error fetching track details:', error);
+			}
 		}
 		
-		function tick() {
-			let rq = requestUpdate();
-			rq.then(successHandler, failureHandler);
-			rq.catch(failureHandler);
+		function updateTrackDetails({ playcount, loved }) {
+			const playcountElement = document.querySelector('.number');
+			if (playcountElement) {
+				playcountElement.textContent = `${playcount.toLocaleString()} Plays${loved ? ' ❤️' : ''}`;
+			}
 		}
-		
-		(function() {
-			tick();
-		})();
-	</script>
-<?php if ($trackInfo['status'] == 'Now Playing') { ?>
-</head>
-<body>
-	<div id="container">	
-		<div class="artwork"></div>
-		<section id="main">
-			<img class="art_image" src="<?php echo $trackInfo['albumArt']; ?>" width="500" height="500">
-			<div class="text">
-				<div class="track"><?php echo $trackInfo['name']; ?></div>
-				<div class="artist"><?php echo $trackInfo['artist']; ?></div>
-				<div class="album"><?php echo $trackInfo['album']; ?></div>
-				<div class="number"><?php echo $playcount; ?><?php echo $loved; ?></div>
-			</div>		
-		</section>		
-	</div>
-</body>
-</html>
-<?php } else { ?>
-</head>
-<body>
-	<div id="container" class="last_played">	
-			<div class="user"><?php echo $username; ?></div>
-			<div class="stat_box">
-				<div class="header">scrobbles</div>
-				<div class="scrobbles"><?php echo $playcount; ?></div>
-			</div>
-			<div class="stat_box">
-				<div class="header">last played</div>
-				<div class="play_box">
-				<div class="track"><?php echo $trackInfo['name']; ?></div>
-				<div class="artist"><?php echo $trackInfo['artist']; ?></div>
+
+		async function updateIdleState(lastPlayedTrack) {
+			if (!document.querySelector('.stat_box.last_played')) {
+				renderIdleLayout();
+			}
+
+			const trackName = lastPlayedTrack.name || 'Unknown Track';
+			const artistName = lastPlayedTrack.artist['#text'] || 'Unknown Artist';
+
+			document.querySelector('.last_played .track').textContent = trackName;
+			document.querySelector('.last_played .artist').textContent = artistName;
+
+			try {
+				const response = await fetch('<?php echo $userInfoEndpoint; ?>');
+				const data = await response.json();
+				const username = data.user.realname || 'Unknown User';
+				const totalScrobbles = parseInt(data.user.playcount || 0, 10);
+
+				const userElement = document.querySelector('.user');
+				const scrobblesElement = document.querySelector('.scrobbles');
+
+				if (userElement) {
+					userElement.textContent = username;
+				}
+
+				if (scrobblesElement) {
+					scrobblesElement.textContent = totalScrobbles.toLocaleString();
+				}
+			} catch (error) {
+				console.error('Error fetching user info:', error);
+			}
+		}
+
+		function renderNowPlayingLayout() {
+			const container = document.getElementById('container');
+			container.innerHTML = `
+				<div class="artwork"></div>
+				<section id="main">
+					<img class="art_image" src="" width="500" height="500">
+					<div class="text">
+						<div class="track">Unknown Track</div>
+						<div class="artist">Unknown Artist</div>
+						<div class="album">Unknown Album</div>
+						<div class="number">0 Plays</div>
+					</div>
+				</section>
+			`;
+		}
+
+		function renderIdleLayout() {
+			const container = document.getElementById('container');
+			container.innerHTML = `
+				<div class="user">Loading...</div>
+				<div class="stat_box">
+					<div class="header">Scrobbles</div>
+					<div class="scrobbles">Loading...</div>
 				</div>
-			</div>
-			<div class="list">Top Albums - Last 7 Days</div>
-			<div class="albums">
-				<img class="top_albums" src="<?php echo $album_1; ?>">
-				<img class="top_albums" src="<?php echo $album_2; ?>">
-				<img class="top_albums" src="<?php echo $album_3; ?>">
-				<img class="top_albums" src="<?php echo $album_4; ?>">
-				<img class="top_albums" src="<?php echo $album_5; ?>">
-				<img class="top_albums" src="<?php echo $album_6; ?>">
-				<img class="top_albums" src="<?php echo $album_7; ?>">
-				<img class="top_albums" src="<?php echo $album_8; ?>">
-				<img class="top_albums" src="<?php echo $album_9; ?>">
-				<img class="top_albums" src="<?php echo $album_10; ?>">
-				<img class="top_albums" src="<?php echo $album_11; ?>">
-				<img class="top_albums" src="<?php echo $album_12; ?>">
-			</div>			
-	</div>
+				<div class="stat_box last_played">
+					<div class="header">Last Played</div>
+					<div class="play_box">
+						<div class="track">Unknown Track</div>
+						<div class="artist">Unknown Artist</div>
+					</div>
+				</div>
+				<div class="list">Top Albums - Last 7 Days</div>
+				<div class="albums">
+					<?php foreach ($topAlbums as $album): ?>
+						<img class="top_albums" src="<?php echo $album['image'][3]['#text'] ?? 'artwork-placeholder.png'; ?>">
+					<?php endforeach; ?>
+				</div>
+			`;
+		}
+
+		document.addEventListener("DOMContentLoaded", fetchTrackData);
+	</script>
+</head>
+<body>
+	<div id="container"></div>
 </body>
 </html>
-<?php } ?>
