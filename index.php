@@ -97,16 +97,27 @@ $topAlbums = getCachedData('top_albums', function () use ($topAlbumsEndpoint) {
 				const response = await fetch('<?php echo $recentTracksEndpoint; ?>');
 				const data = await response.json();
 				const tracks = data.recenttracks.track;
-
+		
 				const nowPlaying = tracks[0] && tracks[0]["@attr"] && tracks[0]["@attr"].nowplaying;
-
+				const trackName = tracks[0]?.name || 'Unknown Track';
+				const artistName = tracks[0]?.artist['#text'] || 'Unknown Artist';
+		
 				if (nowPlaying) {
 					updatePlayingTrack(tracks[0]);
-					pollInterval = 10000;
+					pollInterval = 10000; // Check every 10 seconds
+				} else if (
+					currentTrackCache.name === trackName &&
+					currentTrackCache.artist === artistName &&
+					currentTrackCache.endTime &&
+					Date.now() < currentTrackCache.endTime
+				) {
+					// Assume the track is paused or scrobbled prematurely; keep "Now Playing"
+					console.log('Track might be paused; keeping Now Playing.');
+					pollInterval = 10000; // Poll more frequently
 				} else {
-					const lastPlayedTrack = tracks[0];
+					const lastPlayedTrack = tracks[0]; // Use the first track if nothing is playing
 					updateIdleState(lastPlayedTrack);
-					pollInterval = 30000;
+					pollInterval = 30000; // Switch to idle state polling
 				}
 			} catch (error) {
 				console.error('Error fetching track data:', error);
@@ -115,7 +126,7 @@ $topAlbums = getCachedData('top_albums', function () use ($topAlbumsEndpoint) {
 			}
 		}
 
-		let currentTrackCache = { name: '', artist: '' };
+		let currentTrackCache = { name: '', artist: '', endTime: null };
 		
 		function updatePlayingTrack(track) {
 			const trackName = track.name || 'Unknown Track';
@@ -126,11 +137,13 @@ $topAlbums = getCachedData('top_albums', function () use ($topAlbumsEndpoint) {
 				return; // No need to fetch details again
 			}
 		
-			currentTrackCache = { name: trackName, artist: artistName };
+			currentTrackCache = { name: trackName, artist: artistName, endTime: null };
 		
 			if (!document.querySelector('.art_image')) {
 				renderNowPlayingLayout();
 			}
+			
+			document.title = `${trackName} by ${artistName} - Now Playing`;
 		
 			const albumName = track.album['#text'] || 'Unknown Album';
 			const albumArt = track.image[3]['#text'] || 'artwork-placeholder.png';
@@ -143,27 +156,25 @@ $topAlbums = getCachedData('top_albums', function () use ($topAlbumsEndpoint) {
 			fetchTrackDetails(artistName, trackName);
 		}
 		
-		const trackDetailsCache = {};
-		
 		async function fetchTrackDetails(artist, track) {
-			const cacheKey = `${artist}-${track}`.toLowerCase();
-		
-			if (trackDetailsCache[cacheKey]) {
-				updateTrackDetails(trackDetailsCache[cacheKey]);
-				return;
-			}
-		
 			try {
 				const response = await fetch(`https://ws.audioscrobbler.com/2.0/?method=track.getInfo&username=<?php echo LASTFM_USER; ?>&artist=${encodeURIComponent(artist)}&track=${encodeURIComponent(track)}&api_key=<?php echo LASTFM_API_KEY; ?>&format=json`);
 				const data = await response.json();
 		
 				const playcount = data.track?.userplaycount || 0;
 				const loved = data.track?.userloved === "1";
+				const durationMs = parseInt(data.track?.duration, 10); // Duration in milliseconds
 		
-				// Cache the result
-				trackDetailsCache[cacheKey] = { playcount, loved };
+				const playcountElement = document.querySelector('.number');
+				if (playcountElement) {
+					playcountElement.textContent = `${playcount.toLocaleString()} Plays${loved ? ' ❤️' : ''}`;
+				}
 		
-				updateTrackDetails({ playcount, loved });
+				// Calculate end time if duration is available
+				if (durationMs > 0) {
+					const currentTime = Date.now();
+					currentTrackCache.endTime = currentTime + durationMs;
+				}
 			} catch (error) {
 				console.error('Error fetching track details:', error);
 			}
@@ -183,6 +194,8 @@ $topAlbums = getCachedData('top_albums', function () use ($topAlbumsEndpoint) {
 
 			const trackName = lastPlayedTrack.name || 'Unknown Track';
 			const artistName = lastPlayedTrack.artist['#text'] || 'Unknown Artist';
+
+			document.title = `Last Played: ${trackName} by ${artistName}`;
 
 			document.querySelector('.last_played .track').textContent = trackName;
 			document.querySelector('.last_played .artist').textContent = artistName;
