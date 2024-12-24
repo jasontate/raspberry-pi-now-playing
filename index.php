@@ -90,7 +90,9 @@ $topAlbums = getCachedData('top_albums', function () use ($topAlbumsEndpoint) {
 	</style>
 	<script>
 		let playing = <?php echo $isNowPlaying ? 'true' : 'false'; ?>;
-		let pollInterval = playing ? 10000 : 30000; // 10 seconds if playing, 30 seconds if idle
+		let isTransitioning = false; // Track if we're in quick polling mode
+		let quickPollingStart = null; // Track when quick polling started
+		let pollInterval = playing ? 10000 : 20000; // Default: 10s for playing, 20s for idle
 
 		async function fetchTrackData() {
 			try {
@@ -98,27 +100,34 @@ $topAlbums = getCachedData('top_albums', function () use ($topAlbumsEndpoint) {
 				const data = await response.json();
 				const tracks = data.recenttracks.track;
 		
-				const nowPlaying = tracks[0] && tracks[0]["@attr"] && tracks[0]["@attr"].nowplaying;
-				const trackName = tracks[0]?.name || 'Unknown Track';
-				const artistName = tracks[0]?.artist['#text'] || 'Unknown Artist';
+				const recentTrack = tracks[0];
+				const nowPlaying = recentTrack && recentTrack["@attr"] && recentTrack["@attr"].nowplaying;
 		
 				if (nowPlaying) {
-					updatePlayingTrack(tracks[0]);
-					pollInterval = 10000; // Check every 10 seconds
-				} else if (
-					currentTrackCache.name === trackName &&
-					currentTrackCache.artist === artistName &&
-					currentTrackCache.endTime &&
-					Date.now() < currentTrackCache.endTime
-				) {
-					// Assume the track is paused or scrobbled prematurely; keep "Now Playing"
-					console.log('Track might be paused; keeping Now Playing.');
-					pollInterval = 10000; // Poll more frequently
+					console.log('Now Playing detected:', recentTrack);
+					updatePlayingTrack(recentTrack);
+					pollInterval = 10000; // Normal polling (10 seconds when playing)
+					isTransitioning = false; // Reset transition state
+					quickPollingStart = null; // Reset quick polling timer
 				} else {
-					const lastPlayedTrack = tracks[0]; // Use the first track if nothing is playing
-					updateIdleState(lastPlayedTrack);
-					pollInterval = 30000; // Switch to idle state polling
+					if (!isTransitioning) {
+						console.log('Idle state detected, entering quick polling.');
+						pollInterval = 5000; // Quick polling every 5 seconds
+						isTransitioning = true; // Mark as transitioning
+						quickPollingStart = Date.now(); // Record start time of quick polling
+					} else if (quickPollingStart && Date.now() - quickPollingStart > 120000) { 
+						// 120000ms = 2 minutes
+						console.log('Quick polling timeout reached, reverting to slower polling.');
+						pollInterval = 20000; // Revert to slower polling (20 seconds)
+						isTransitioning = false; // Reset transitioning state
+						quickPollingStart = null; // Reset quick polling timer
+					} else {
+						console.log('Still in idle, continuing quick polling.');
+					}
+					updateIdleState(recentTrack);
 				}
+		
+				currentTrackCache.recentTrack = recentTrack;
 			} catch (error) {
 				console.error('Error fetching track data:', error);
 			} finally {
@@ -170,10 +179,14 @@ $topAlbums = getCachedData('top_albums', function () use ($topAlbumsEndpoint) {
 					playcountElement.textContent = `${playcount.toLocaleString()} Plays${loved ? ' ❤️' : ''}`;
 				}
 		
-				// Calculate end time if duration is available
-				if (durationMs > 0) {
+				const recentTrack = currentTrackCache.recentTrack;
+				if (recentTrack?.["@attr"]?.nowplaying && durationMs > 0) {
+					console.log('Now Playing track detected.');
 					const currentTime = Date.now();
 					currentTrackCache.endTime = currentTime + durationMs;
+				} else if (durationMs > 0 && recentTrack?.date?.uts) {
+					const startTime = parseInt(recentTrack.date.uts, 10) * 1000;
+					currentTrackCache.endTime = startTime + durationMs;
 				}
 			} catch (error) {
 				console.error('Error fetching track details:', error);
@@ -188,6 +201,11 @@ $topAlbums = getCachedData('top_albums', function () use ($topAlbumsEndpoint) {
 		}
 
 		async function updateIdleState(lastPlayedTrack) {
+			// Only update to idle if the track has fully ended
+			if (currentTrackCache.endTime && Date.now() < currentTrackCache.endTime) {
+				console.log('Still within track end time; skipping idle state.');
+				return;
+			}
 			if (!document.querySelector('.stat_box.last_played')) {
 				renderIdleLayout();
 			}
